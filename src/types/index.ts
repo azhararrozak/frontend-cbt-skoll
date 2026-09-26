@@ -9,6 +9,7 @@ export interface User {
   nis: string | null;
   /** NISN: identitas utama siswa (null untuk guru/admin) */
   nisn: string | null;
+  initialPassword?: string | null;
   role: UserRole;
   createdAt: string;
   updatedAt: string;
@@ -282,3 +283,41 @@ export interface SessionResult {
 }
 
 export type AnswerStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
+
+
+// ===== Event Ujian =====
+export interface EventItem {
+  id: number;
+  title: string;
+  schoolName: string;
+  schoolAddress: string | null;
+  academicYear: string | null;
+  logo: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  description: string | null;
+  signerName?: string | null;
+  signerTitle?: string | null;
+  signerNip?: string | null;
+  createdBy: number;
+  createdAt: string;
+  updatedAt: string;
+  examCount: number;
+}
+
+export interface EventExamInfo {
+  id: number;
+  title: string;
+  classNames: string;
+  startAt: string | null;
+  durationMinutes: number;
+  isPublished: boolean;
+}
+
+export interface EventDetail extends Omit<EventItem, 'examCount'> {
+  exams: EventExamInfo[];
+  classIds: number[];
+}
+
+export type EventDocKind = 'kartu-peserta' | 'daftar-hadir' | 'nomor-meja';
+export type DocumentFormat = 'pdf' | 'docx';

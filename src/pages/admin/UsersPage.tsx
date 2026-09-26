@@ -133,6 +133,7 @@ export function UsersPage() {
                 <th className="px-4 py-3 font-medium">NISN</th>
                 <th className="px-4 py-3 font-medium">Email</th>
                 <th className="px-4 py-3 font-medium">Role</th>
+                <th className="px-4 py-3 font-medium">Pass Awal</th>
                 <th className="px-4 py-3 font-medium">Terdaftar</th>
                 <th className="px-4 py-3 text-right font-medium">Aksi</th>
               </tr>
@@ -146,6 +147,9 @@ export function UsersPage() {
                   <td className="px-4 py-3 text-slate-500">{u.email}</td>
                   <td className="px-4 py-3">
                     <Badge tone={roleTone[u.role]}>{u.role}</Badge>
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                    {u.initialPassword || '-'}
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-400">{formatDate(u.createdAt)}</td>
                   <td className="px-4 py-3 text-right">

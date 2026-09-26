@@ -13,6 +13,8 @@ import { ExamsPage } from './pages/admin/ExamsPage';
 import { ExamResultsPage } from './pages/admin/ExamResultsPage';
 import { UsersPage } from './pages/admin/UsersPage';
 import { BackupPage } from './pages/admin/BackupPage';
+import { EventsPage } from './pages/admin/EventsPage';
+import { EventDetailPage } from './pages/admin/EventDetailPage';
 import { StudentDashboard } from './pages/siswa/StudentDashboard';
 import { ExamPage } from './pages/siswa/ExamPage';
 import { StudentResultPage } from './pages/siswa/StudentResultPage';
@@ -49,6 +51,8 @@ export default function App() {
               <Route path="/app/bank-soal/:id" element={<BankDetailPage />} />
               <Route path="/app/kelas" element={<ClassesPage />} />
               <Route path="/app/ujian" element={<ExamsPage />} />
+              <Route path="/app/event" element={<EventsPage />} />
+              <Route path="/app/event/:id" element={<EventDetailPage />} />
               <Route path="/app/ujian/:id/hasil" element={<ExamResultsPage />} />
               <Route
                 path="/app/pengguna"

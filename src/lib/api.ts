@@ -1,6 +1,10 @@
 import type {
   ApiErrorBody,
   ApiSuccess,
+  DocumentFormat,
+  EventDetail,
+  EventDocKind,
+  EventItem,
   AvailableExam,
   ClassMember,
   ClassRoom,
@@ -263,6 +267,32 @@ export const api = {
       method: 'POST',
       body: form,
     });
+  },
+
+  // Event ujian
+  listEvents: () => request<EventItem[]>('/events'),
+  getEvent: (id: number) => request<EventDetail>(`/events/${id}`),
+  createEvent: (body: Record<string, unknown>) =>
+    request<EventItem>('/events', { method: 'POST', body }),
+  updateEvent: (id: number, body: Record<string, unknown>) =>
+    request<EventItem>(`/events/${id}`, { method: 'PATCH', body }),
+  deleteEvent: (id: number) => request(`/events/${id}`, { method: 'DELETE' }),
+  uploadEventLogo: (id: number, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<{ logo: string }>(`/events/${id}/logo`, { method: 'POST', body: form });
+  },
+  removeEventLogo: (id: number) => request<{ logo: null }>(`/events/${id}/logo`, { method: 'DELETE' }),
+  downloadEventDoc: (
+    id: number,
+    kind: EventDocKind,
+    classId?: number,
+    format: DocumentFormat = 'pdf',
+  ) => {
+    const params = new URLSearchParams();
+    if (classId) params.set('classId', String(classId));
+    params.set('format', format);
+    return downloadFile(`/events/${id}/documents/${kind}?${params.toString()}`);
   },
 
   // Backup (admin)

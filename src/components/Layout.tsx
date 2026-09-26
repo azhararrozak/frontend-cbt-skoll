@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router';
 import {
   BookOpen,
+  CalendarRange,
   ClipboardList,
   DatabaseBackup,
   LayoutDashboard,
@@ -21,6 +22,7 @@ const menuItems = [
   { to: '/app/bank-soal', label: 'Bank Soal', icon: BookOpen },
   { to: '/app/kelas', label: 'Kelas', icon: School },
   { to: '/app/ujian', label: 'Ujian', icon: ClipboardList },
+  { to: '/app/event', label: 'Event Ujian', icon: CalendarRange },
   { to: '/app/pengguna', label: 'Pengguna', icon: Users, adminOnly: true },
   { to: '/app/backup', label: 'Backup Data', icon: DatabaseBackup, adminOnly: true },
 ];
