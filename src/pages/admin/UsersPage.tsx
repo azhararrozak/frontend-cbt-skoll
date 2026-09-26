@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Search, Trash2 } from 'lucide-react';
+import { Plus, Search, Trash2, Upload } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../auth/useAuth';
 import {
@@ -15,6 +15,7 @@ import {
   PageLoading,
   Select,
 } from '../../components/ui';
+import { ImportExcelModal } from '../../components/ImportExcelModal';
 import { errorMessage, formatDate } from '../../lib/format';
 import type { User, UserRole } from '../../types';
 
@@ -33,7 +34,8 @@ export function UsersPage() {
   const [reload, setReload] = useState(0);
 
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'siswa' as UserRole });
+  const [showImport, setShowImport] = useState(false);
+  const [form, setForm] = useState({ name: '', email: '', nis: '', nisn: '', password: '', role: 'siswa' as UserRole });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -64,7 +66,9 @@ export function UsersPage() {
     try {
       await api.createUser({
         name: form.name.trim(),
-        email: form.email.trim(),
+        email: form.email.trim() || undefined,
+        nis: form.nis.trim() || undefined,
+        nisn: form.nisn.trim() || undefined,
         password: form.password,
         role: form.role,
       });
@@ -86,9 +90,14 @@ export function UsersPage() {
         title="Pengguna"
         subtitle="Kelola akun admin, guru, dan siswa"
         actions={
-          <Button onClick={() => { setFormError(''); setForm({ name: '', email: '', password: '', role: 'siswa' }); setShowCreate(true); }}>
-            <Plus className="h-4 w-4" /> Buat Akun
-          </Button>
+          <>
+            <Button variant="secondary" onClick={() => setShowImport(true)}>
+              <Upload className="h-4 w-4" /> Import Excel
+            </Button>
+            <Button onClick={() => { setFormError(''); setForm({ name: '', email: '', nis: '', nisn: '', password: '', role: 'siswa' }); setShowCreate(true); }}>
+              <Plus className="h-4 w-4" /> Buat Akun
+            </Button>
+          </>
         }
       />
 
@@ -98,7 +107,7 @@ export function UsersPage() {
         <div className="relative max-w-sm flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <Input
-            placeholder="Cari nama atau email..."
+            placeholder="Cari nama, NISN, atau email..."
             className="pl-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -120,6 +129,8 @@ export function UsersPage() {
             <thead>
               <tr className="border-b border-slate-200 text-xs text-slate-400 uppercase">
                 <th className="px-5 py-3 font-medium">Nama</th>
+                <th className="px-4 py-3 font-medium">NIS</th>
+                <th className="px-4 py-3 font-medium">NISN</th>
                 <th className="px-4 py-3 font-medium">Email</th>
                 <th className="px-4 py-3 font-medium">Role</th>
                 <th className="px-4 py-3 font-medium">Terdaftar</th>
@@ -130,6 +141,8 @@ export function UsersPage() {
               {users.map((u) => (
                 <tr key={u.id} className="hover:bg-slate-50">
                   <td className="px-5 py-3 font-medium text-slate-700">{u.name}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{u.nis ?? '-'}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-600">{u.nisn ?? '-'}</td>
                   <td className="px-4 py-3 text-slate-500">{u.email}</td>
                   <td className="px-4 py-3">
                     <Badge tone={roleTone[u.role]}>{u.role}</Badge>
@@ -167,12 +180,6 @@ export function UsersPage() {
           <Field label="Nama">
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </Field>
-          <Field label="Email">
-            <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          </Field>
-          <Field label="Password" hint="Minimal 8 karakter">
-            <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-          </Field>
           <Field label="Role">
             <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })}>
               <option value="siswa">Siswa</option>
@@ -180,16 +187,67 @@ export function UsersPage() {
               {me?.role === 'admin' && <option value="admin">Admin</option>}
             </Select>
           </Field>
+          {form.role === 'siswa' ? (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="NISN" hint="Identitas login siswa">
+                <Input
+                  inputMode="numeric"
+                  value={form.nisn}
+                  onChange={(e) => setForm({ ...form, nisn: e.target.value.replace(/\D/g, '') })}
+                  placeholder="0012345678"
+                  className="font-mono"
+                />
+              </Field>
+              <Field label="NIS (opsional)" hint="Nomor induk sekolah">
+                <Input
+                  inputMode="numeric"
+                  value={form.nis}
+                  onChange={(e) => setForm({ ...form, nis: e.target.value.replace(/\D/g, '') })}
+                  placeholder="2024001"
+                  className="font-mono"
+                />
+              </Field>
+            </div>
+          ) : (
+            <Field label="Email">
+              <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            </Field>
+          )}
+          <Field label="Password" hint="Minimal 8 karakter">
+            <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          </Field>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setShowCreate(false)}>Batal</Button>
             <Button onClick={handleCreate} loading={saving}
-              disabled={!form.name.trim() || !form.email.trim() || form.password.length < 8}
+              disabled={
+                !form.name.trim() ||
+                form.password.length < 8 ||
+                (form.role === 'siswa' ? form.nisn.trim().length < 4 : !form.email.trim())
+              }
             >
               Simpan
             </Button>
           </div>
         </div>
       </Modal>
+      {/* Modal import Excel */}
+      <ImportExcelModal
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        onSuccess={refresh}
+        title="Import Akun dari Excel"
+        columnsHint={[
+          'nama (wajib)',
+          'nis (opsional — nomor induk sekolah)',
+          'nisn (wajib untuk siswa — identitas login)',
+          'email (wajib untuk guru/admin, opsional untuk siswa)',
+          'password (wajib, min 8 karakter)',
+          'role (siswa/guru/admin, default siswa)',
+          'kelas (opsional — akun siswa otomatis digabung ke kelas, kelas dibuat bila belum ada)',
+        ]}
+        onDownloadTemplate={api.downloadUsersTemplate}
+        onUpload={api.importUsers}
+      />
     </>
   );
 }

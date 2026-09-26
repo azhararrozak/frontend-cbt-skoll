@@ -5,6 +5,10 @@ export interface User {
   id: number;
   name: string;
   email: string;
+  /** NIS: nomor induk sekolah (identitas internal) */
+  nis: string | null;
+  /** NISN: identitas utama siswa (null untuk guru/admin) */
+  nisn: string | null;
   role: UserRole;
   createdAt: string;
   updatedAt: string;
@@ -58,6 +62,8 @@ export interface Question {
 export interface ClassRoom {
   id: number;
   name: string;
+  grade: string;
+  jurusan: string;
   description: string | null;
   createdBy: number;
   createdAt: string;
@@ -65,10 +71,26 @@ export interface ClassRoom {
   studentCount?: number;
 }
 
+export interface ImportRowError {
+  row: number;
+  message: string;
+}
+
+export interface ImportSummary {
+  created: number;
+  skipped: number;
+  errors: ImportRowError[];
+  classesCreated?: number;
+  /** Import siswa per kelas: siswa lama yang baru digabung ke kelas */
+  linked?: number;
+}
+
 export interface ClassMember {
   id: number;
   name: string;
   email: string;
+  nis: string | null;
+  nisn: string | null;
   role: UserRole;
 }
 
@@ -78,9 +100,14 @@ export interface Exam {
   title: string;
   description: string | null;
   bankId: number;
-  classId: number;
   token: string;
   durationMinutes: number;
+  /** Siswa boleh menyelesaikan ujian setelah menit ke-N (0 = bebas) */
+  minSubmitMinutes: number;
+  /** Tampilkan nilai ke siswa setelah selesai? */
+  showScore: boolean;
+  /** Acak urutan soal untuk tiap siswa? */
+  shuffleQuestions: boolean;
   startAt: string | null;
   endAt: string | null;
   isPublished: boolean;
@@ -91,13 +118,15 @@ export interface Exam {
 
 export interface ExamListItem extends Exam {
   bankName: string | null;
-  className: string;
+  classNames: string;
+  classIds: number[];
   sessionCount: number;
 }
 
 export interface ExamDetail extends Exam {
   bankName: string | null;
-  className: string;
+  classNames: string;
+  classIds: number[];
   totalQuestions: number;
 }
 
@@ -106,7 +135,7 @@ export type ExamAvailability = 'open' | 'upcoming' | 'ended';
 export interface AvailableExam {
   exam: Exam;
   bankName: string | null;
-  className: string;
+  classNames: string;
   availability: ExamAvailability;
   mySession: {
     id: number;
@@ -145,6 +174,35 @@ export interface ExamResults {
   rows: ExamResultRow[];
 }
 
+export interface ExamMonitorRow {
+  sessionId: number;
+  studentId: number;
+  studentName: string;
+  studentEmail: string;
+  status: 'in_progress' | 'completed';
+  score: number;
+  answeredCount: number;
+  flaggedCount: number;
+  remainingSeconds: number;
+  startedAt: string;
+  expiresAt: string;
+  finishedAt: string | null;
+}
+
+export interface ExamMonitoring {
+  exam: Exam;
+  totalQuestions: number;
+  totalPoints: number;
+  rows: ExamMonitorRow[];
+}
+
+export interface ActiveExamSummary {
+  examId: number;
+  title: string;
+  inProgress: number;
+  completed: number;
+}
+
 // ===== Sesi Ujian =====
 export interface MySession {
   id: number;
@@ -179,6 +237,10 @@ export interface SessionDetail {
     expiresAt: string;
     finishedAt: string | null;
     score: number;
+    /** Siswa boleh menyelesaikan setelah menit ke-N */
+    minSubmitMinutes: number;
+    /** Daftar id soal yang ditandai ragu-ragu */
+    flaggedQuestions: number[];
     remainingSeconds: number;
   };
   exam: {
@@ -186,6 +248,7 @@ export interface SessionDetail {
     title: string;
     description: string | null;
     durationMinutes: number;
+    showScore: boolean;
   };
   progress: {
     answered: number;
@@ -211,6 +274,8 @@ export interface SessionResult {
   startedAt: string;
   finishedAt: string | null;
   score: number;
+  /** false = skor disembunyikan dari siswa oleh pengaturan ujian */
+  showScore?: boolean;
   totalPoints: number;
   totalQuestions: number;
   answers: SessionResultAnswer[];

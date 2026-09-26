@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router';
 import {
   BookOpen,
   ClipboardList,
+  DatabaseBackup,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -21,6 +22,7 @@ const menuItems = [
   { to: '/app/kelas', label: 'Kelas', icon: School },
   { to: '/app/ujian', label: 'Ujian', icon: ClipboardList },
   { to: '/app/pengguna', label: 'Pengguna', icon: Users, adminOnly: true },
+  { to: '/app/backup', label: 'Backup Data', icon: DatabaseBackup, adminOnly: true },
 ];
 
 function SidebarContent({ role, onNavigate }: { role: string; onNavigate?: () => void }) {

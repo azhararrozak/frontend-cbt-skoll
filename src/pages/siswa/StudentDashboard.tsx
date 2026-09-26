@@ -137,7 +137,7 @@ export function StudentDashboard() {
                   <div className="mb-2 flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="font-semibold text-slate-800">{item.exam.title}</p>
-                      <p className="text-xs text-slate-400">{item.className} · {item.bankName ?? 'Soal'}</p>
+                      <p className="text-xs text-slate-400">{item.classNames} · {item.bankName ?? 'Soal'}</p>
                     </div>
                     <Badge tone={meta.tone}>{meta.label}</Badge>
                   </div>
@@ -163,7 +163,8 @@ export function StudentDashboard() {
                     {completed ? (
                       <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-4 py-2.5">
                         <span className="flex items-center gap-2 text-sm font-medium text-emerald-700">
-                          <CheckCircle2 className="h-4 w-4" /> Selesai · nilai {item.mySession!.score}
+                          <CheckCircle2 className="h-4 w-4" /> Selesai
+                          {item.exam.showScore && <> · nilai {item.mySession!.score}</>}
                         </span>
                         <Button variant="secondary" onClick={() => navigate(`/siswa/hasil/${item.mySession!.id}`)} className="px-3 py-1.5 text-xs">
                           Lihat
@@ -240,7 +241,7 @@ export function StudentDashboard() {
             <div className="rounded-lg bg-slate-50 px-4 py-3">
               <p className="font-semibold text-slate-800">{tokenExam.exam.title}</p>
               <p className="mt-0.5 text-sm text-slate-500">
-                {tokenExam.className} · durasi {tokenExam.exam.durationMinutes} menit
+                {tokenExam.classNames} · durasi {tokenExam.exam.durationMinutes} menit
               </p>
             </div>
             <p className="text-sm text-slate-500">

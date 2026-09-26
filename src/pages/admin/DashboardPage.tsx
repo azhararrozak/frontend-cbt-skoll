@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
-import { BookOpen, ClipboardList, Eye, School, Users } from 'lucide-react';
+import { Activity, BookOpen, ClipboardList, Eye, School, Users } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Badge, Card, ErrorNote, PageHeader, PageLoading } from '../../components/ui';
 import { formatDateTime, errorMessage } from '../../lib/format';
 import { useAuth } from '../../auth/useAuth';
-import type { ExamListItem } from '../../types';
+import type { ActiveExamSummary, ExamListItem } from '../../types';
 
 interface Stats {
   exams: number;
@@ -18,10 +18,11 @@ export function DashboardPage() {
   const { user } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
   const [recent, setRecent] = useState<ExamListItem[]>([]);
+  const [active, setActive] = useState<ActiveExamSummary[]>([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    let active = true;
+    let activeSub = true;
     Promise.all([
       api.listExams({ limit: 5 }),
       api.listBanks({ limit: 1 }),
@@ -29,7 +30,7 @@ export function DashboardPage() {
       api.listUsers({ limit: 1, role: 'siswa' }),
     ])
       .then(([exams, banks, classes, students]) => {
-        if (!active) return;
+        if (!activeSub) return;
         setRecent(exams.data ?? []);
         setStats({
           exams: exams.pagination?.totalItems ?? 0,
@@ -38,9 +39,20 @@ export function DashboardPage() {
           students: students.pagination?.totalItems ?? 0,
         });
       })
-      .catch((err) => active && setError(errorMessage(err)));
+      .catch((err) => activeSub && setError(errorMessage(err)));
+
+    // Pemantauan ujian berlangsung — muat sekarang + segarkan tiap 15 detik
+    const loadActive = () =>
+      api
+        .activeExamSummary()
+        .then((res) => activeSub && setActive(res.data ?? []))
+        .catch(() => {});
+    loadActive();
+    const poll = setInterval(loadActive, 15000);
+
     return () => {
-      active = false;
+      activeSub = false;
+      clearInterval(poll);
     };
   }, []);
 
@@ -75,6 +87,39 @@ export function DashboardPage() {
         ))}
       </div>
 
+      {/* Ujian yang sedang berlangsung */}
+      {active.length > 0 && (
+        <div className="mt-6">
+          <div className="mb-3 flex items-center gap-2">
+            <Activity className="h-4.5 w-4.5 text-emerald-600" />
+            <h2 className="font-semibold text-slate-700">Sedang Berlangsung</h2>
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
+          </div>
+          <Card className="divide-y divide-slate-100 p-0">
+            {active.map((item) => (
+              <div key={item.examId} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3.5">
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-slate-700">{item.title}</p>
+                  <p className="text-xs text-slate-400">
+                    <span className="font-medium text-indigo-600">{item.inProgress} siswa sedang mengerjakan</span>
+                    {item.completed > 0 && ` · ${item.completed} selesai`}
+                  </p>
+                </div>
+                <Link
+                  to={`/app/ujian/${item.examId}/hasil`}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
+                >
+                  <Eye className="h-3.5 w-3.5" /> Pantau
+                </Link>
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
+
       <div className="mt-6">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-semibold text-slate-700">Ujian Terbaru</h2>
@@ -102,7 +147,7 @@ export function DashboardPage() {
                 <div className="min-w-0">
                   <p className="truncate font-medium text-slate-700">{exam.title}</p>
                   <p className="text-xs text-slate-400">
-                    {exam.className} · {exam.durationMinutes} menit · {formatDateTime(exam.createdAt)}
+                    {exam.classNames} · {exam.durationMinutes} menit · {formatDateTime(exam.createdAt)}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

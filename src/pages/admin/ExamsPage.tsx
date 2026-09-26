@@ -12,6 +12,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { api } from '../../lib/api';
+import { useAuth } from '../../auth/useAuth';
 import {
   Badge,
   Button,
@@ -34,8 +35,11 @@ interface ExamFormState {
   title: string;
   description: string;
   bankId: string;
-  classId: string;
+  classIds: number[];
   durationMinutes: number;
+  minSubmitMinutes: number;
+  showScore: boolean;
+  shuffleQuestions: boolean;
   token: string;
   startAt: string; // datetime-local
   endAt: string;
@@ -46,8 +50,11 @@ const emptyForm = (): ExamFormState => ({
   title: '',
   description: '',
   bankId: '',
-  classId: '',
+  classIds: [],
   durationMinutes: 60,
+  minSubmitMinutes: 0,
+  showScore: true,
+  shuffleQuestions: false,
   token: '',
   startAt: '',
   endAt: '',
@@ -55,6 +62,7 @@ const emptyForm = (): ExamFormState => ({
 });
 
 export function ExamsPage() {
+  const { user: me } = useAuth();
   const [exams, setExams] = useState<ExamListItem[] | null>(null);
   const [banks, setBanks] = useState<QuestionBank[]>([]);
   const [classes, setClasses] = useState<ClassRoom[]>([]);
@@ -114,8 +122,11 @@ export function ExamsPage() {
         title: d.title,
         description: d.description ?? '',
         bankId: String(d.bankId),
-        classId: String(d.classId),
+        classIds: d.classIds,
         durationMinutes: d.durationMinutes,
+        minSubmitMinutes: d.minSubmitMinutes,
+        showScore: d.showScore,
+        shuffleQuestions: d.shuffleQuestions,
         token: d.token,
         startAt: toDatetimeLocal(d.startAt),
         endAt: toDatetimeLocal(d.endAt),
@@ -142,8 +153,11 @@ export function ExamsPage() {
       const body: Record<string, unknown> = {
         title: form.title.trim(),
         bankId: Number(form.bankId),
-        classId: Number(form.classId),
+        classIds: form.classIds,
         durationMinutes: form.durationMinutes,
+        minSubmitMinutes: form.minSubmitMinutes,
+        showScore: form.showScore,
+        shuffleQuestions: form.shuffleQuestions,
         isPublished: form.isPublished,
       };
       if (form.description.trim()) body.description = form.description.trim();
@@ -163,6 +177,29 @@ export function ExamsPage() {
   };
 
   const handleDelete = async (exam: ExamListItem) => {
+    // Ujian yang sudah dikerjakan menyimpan nilai siswa — perlindungan data
+    if (exam.sessionCount > 0) {
+      if (me?.role === 'admin') {
+        const ok = confirm(
+          `Ujian "${exam.title}" sudah dikerjakan oleh ${exam.sessionCount} siswa.\n\n` +
+            'Hapus PERMANEN beserta seluruh jawaban dan nilai siswa?\nTindakan ini tidak bisa dibatalkan!',
+        );
+        if (!ok) return;
+        try {
+          await api.deleteExam(exam.id, true);
+          refresh();
+        } catch (err) {
+          setError(errorMessage(err));
+        }
+        return;
+      }
+      setError(
+        `Ujian "${exam.title}" sudah dikerjakan oleh ${exam.sessionCount} siswa sehingga tidak bisa dihapus ` +
+          'karena menyimpan data nilai. Sebagai alternatif, nonaktifkan publikasinya (klik badge status). ' +
+          'Hapus permanen hanya bisa dilakukan admin.',
+      );
+      return;
+    }
     if (!confirm(`Hapus ujian "${exam.title}"?`)) return;
     try {
       await api.deleteExam(exam.id);
@@ -266,7 +303,7 @@ export function ExamsPage() {
                   <td className="px-5 py-3.5">
                     <p className="font-medium text-slate-700">{exam.title}</p>
                     <p className="mt-0.5 text-xs text-slate-400">
-                      {exam.className} · {exam.bankName ?? 'bank dihapus'} ·{' '}
+                      {exam.classNames} · {exam.bankName ?? 'bank dihapus'} ·{' '}
                       {exam.durationMinutes} menit · {exam.sessionCount} sesi
                     </p>
                   </td>
@@ -366,16 +403,6 @@ export function ExamsPage() {
                   ))}
                 </Select>
               </Field>
-              <Field label="Kelas">
-                <Select value={form.classId} onChange={(e) => setForm({ ...form, classId: e.target.value })}>
-                  <option value="">— pilih kelas —</option>
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
               <Field label="Durasi (menit)">
                 <Input
                   type="number"
@@ -383,6 +410,66 @@ export function ExamsPage() {
                   max={600}
                   value={form.durationMinutes}
                   onChange={(e) => setForm({ ...form, durationMinutes: Number(e.target.value) })}
+                />
+              </Field>
+            </div>
+
+            {/* Kelas peserta: multi-pilih */}
+            <Field
+              label={`Kelas peserta (${form.classIds.length} dipilih)`}
+              hint="Siswa dari semua kelas terpilih bisa mengikuti ujian ini"
+            >
+              <div className="max-h-44 space-y-2 overflow-y-auto rounded-lg border border-slate-300 p-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setForm({ ...form, classIds: form.classIds.length === classes.length ? [] : classes.map((c) => c.id) })
+                  }
+                  className="cursor-pointer text-xs font-medium text-indigo-600 hover:underline"
+                >
+                  {form.classIds.length === classes.length ? 'Hapus semua' : 'Pilih semua'}
+                </button>
+                {[...new Set(classes.map((c) => c.grade))].map((grade) => (
+                  <div key={grade}>
+                    <p className="mb-1 text-xs font-semibold text-slate-400 uppercase">Kelas {grade}</p>
+                    <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+                      {classes
+                        .filter((c) => c.grade === grade)
+                        .map((c) => (
+                          <label key={c.id} className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 hover:bg-slate-50">
+                            <input
+                              type="checkbox"
+                              checked={form.classIds.includes(c.id)}
+                              onChange={(e) =>
+                                setForm({
+                                  ...form,
+                                  classIds: e.target.checked
+                                    ? [...form.classIds, c.id]
+                                    : form.classIds.filter((v) => v !== c.id),
+                                })
+                              }
+                              className="h-4 w-4 accent-indigo-600"
+                            />
+                            <span className="text-sm text-slate-600">{c.name}</span>
+                          </label>
+                        ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Field>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field
+                label="Boleh dikumpulkan mulai menit ke-"
+                hint="0 = kapan saja. Contoh: 40 → untuk durasi 60 menit, siswa bisa submit setelah 40 menit"
+              >
+                <Input
+                  type="number"
+                  min={0}
+                  max={form.durationMinutes - 1}
+                  value={form.minSubmitMinutes}
+                  onChange={(e) => setForm({ ...form, minSubmitMinutes: Number(e.target.value) })}
                 />
               </Field>
               <Field label="Token" hint="Kosongkan untuk dibuat otomatis">
@@ -409,21 +496,42 @@ export function ExamsPage() {
                 />
               </Field>
             </div>
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
-              <input
-                type="checkbox"
-                checked={form.isPublished}
-                onChange={(e) => setForm({ ...form, isPublished: e.target.checked })}
-                className="h-4 w-4 accent-indigo-600"
-              />
-              Publikasikan (siswa bisa melihat &amp; memulai ujian ini)
-            </label>
+
+            <div className="space-y-2 rounded-lg bg-slate-50 p-3">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={form.isPublished}
+                  onChange={(e) => setForm({ ...form, isPublished: e.target.checked })}
+                  className="h-4 w-4 accent-indigo-600"
+                />
+                Publikasikan (siswa bisa melihat &amp; memulai ujian ini)
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={form.showScore}
+                  onChange={(e) => setForm({ ...form, showScore: e.target.checked })}
+                  className="h-4 w-4 accent-indigo-600"
+                />
+                Tampilkan skor ke siswa setelah selesai
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={form.shuffleQuestions}
+                  onChange={(e) => setForm({ ...form, shuffleQuestions: e.target.checked })}
+                  className="h-4 w-4 accent-indigo-600"
+                />
+                Acak urutan soal (berbeda untuk tiap siswa)
+              </label>
+            </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" onClick={() => setForm(null)}>Batal</Button>
               <Button
                 onClick={handleSave}
                 loading={saving}
-                disabled={!form.title.trim() || !form.bankId || !form.classId}
+                disabled={!form.title.trim() || !form.bankId || form.classIds.length === 0}
               >
                 <KeyRound className="h-4 w-4" /> Simpan Ujian
               </Button>

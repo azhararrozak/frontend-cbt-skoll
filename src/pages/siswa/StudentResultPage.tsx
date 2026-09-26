@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { ArrowLeft, CheckCircle2, Target, Trophy, XCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, EyeOff, Target, Trophy, XCircle } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Badge, Card, ErrorNote, PageLoading } from '../../components/ui';
+import { MathText } from '../../components/MathText';
 import { errorMessage, formatDateTime } from '../../lib/format';
 import type { SessionResult } from '../../types';
 
@@ -37,6 +38,7 @@ export function StudentResultPage() {
   const percentage =
     data.totalPoints > 0 ? Math.round((data.score / data.totalPoints) * 100) : 0;
   const passed = percentage >= 60;
+  const scoreHidden = data.showScore === false;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -45,30 +47,45 @@ export function StudentResultPage() {
       </Link>
 
       {/* Ringkasan nilai */}
-      <Card className="mb-5 text-center">
-        <div
-          className={`mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full ${
-            passed ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'
-          }`}
-        >
-          <Trophy className="h-8 w-8" />
-        </div>
-        <p className="text-sm text-slate-500">Nilai Akhir Anda</p>
-        <p className="text-4xl font-bold text-slate-800">
-          {data.score}
-          <span className="text-xl font-medium text-slate-400"> / {data.totalPoints}</span>
-        </p>
-        <p className="mt-1 text-sm text-slate-500">
-          {percentage >= 0 ? `${percentage}%` : '-'} · {correctCount} dari {data.totalQuestions} soal benar
-        </p>
-        <p className="mt-2 text-xs text-slate-400">Diselesaikan {formatDateTime(data.finishedAt)}</p>
-      </Card>
+      {scoreHidden ? (
+        <Card className="mb-5 text-center">
+          <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+            <EyeOff className="h-8 w-8" />
+          </div>
+          <p className="text-sm text-slate-500">Ujian Anda sudah selesai dikerjakan</p>
+          <p className="mt-1 text-sm text-slate-400">
+            Nilai tidak ditampilkan sesuai pengaturan ujian. Nilai akan diumumkan oleh guru/pengawas.
+          </p>
+          <p className="mt-2 text-xs text-slate-400">Diselesaikan {formatDateTime(data.finishedAt)}</p>
+        </Card>
+      ) : (
+        <Card className="mb-5 text-center">
+          <div
+            className={`mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full ${
+              passed ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'
+            }`}
+          >
+            <Trophy className="h-8 w-8" />
+          </div>
+          <p className="text-sm text-slate-500">Nilai Akhir Anda</p>
+          <p className="text-4xl font-bold text-slate-800">
+            {data.score}
+            <span className="text-xl font-medium text-slate-400"> / {data.totalPoints}</span>
+          </p>
+          <p className="mt-1 text-sm text-slate-500">
+            {percentage}% · {correctCount} dari {data.totalQuestions} soal benar
+          </p>
+          <p className="mt-2 text-xs text-slate-400">Diselesaikan {formatDateTime(data.finishedAt)}</p>
+        </Card>
+      )}
 
-      {/* Rincian per soal */}
-      <h2 className="mb-3 flex items-center gap-2 font-semibold text-slate-700">
-        <Target className="h-4.5 w-4.5" /> Pembahasan Jawaban
-      </h2>
-      <div className="space-y-3">
+      {/* Rincian per soal (disembunyikan juga saat skor dirahasiakan) */}
+      {!scoreHidden && (
+        <>
+          <h2 className="mb-3 flex items-center gap-2 font-semibold text-slate-700">
+            <Target className="h-4.5 w-4.5" /> Pembahasan Jawaban
+          </h2>
+          <div className="space-y-3">
         {data.answers.map((a, idx) => (
           <Card key={a.questionId} className="flex gap-4">
             <div
@@ -85,27 +102,35 @@ export function StudentResultPage() {
                   {a.pointsEarned}/{a.points} poin
                 </Badge>
               </div>
-              <p className="font-medium text-slate-700">{a.questionText}</p>
+              <p className="font-medium text-slate-700">
+                <MathText text={a.questionText} />
+              </p>
               <div className="mt-2 space-y-1 text-sm">
                 <p>
                   <span className="text-slate-400">Jawaban Anda: </span>
                   <span className={a.isCorrect ? 'font-medium text-emerald-700' : 'font-medium text-rose-700'}>
-                    {a.answer !== null
-                      ? correctLabel(a.answer, a.options)
-                      : <span className="text-slate-400 italic">tidak dijawab</span>}
+                    {a.answer !== null ? (
+                      <MathText text={correctLabel(a.answer, a.options)} />
+                    ) : (
+                      <span className="text-slate-400 italic">tidak dijawab</span>
+                    )}
                   </span>
                 </p>
                 {!a.isCorrect && (
                   <p>
                     <span className="text-slate-400">Kunci jawaban: </span>
-                    <span className="font-medium text-emerald-700">{correctLabel(a.correctAnswer, a.options)}</span>
+                    <span className="font-medium text-emerald-700">
+                      <MathText text={correctLabel(a.correctAnswer, a.options)} />
+                    </span>
                   </p>
                 )}
               </div>
             </div>
           </Card>
         ))}
-      </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

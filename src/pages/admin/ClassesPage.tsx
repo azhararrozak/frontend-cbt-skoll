@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Plus, School, Trash2, UserPlus, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Plus, School, Trash2, UserPlus, Upload } from 'lucide-react';
 import { api } from '../../lib/api';
 import {
   Button,
@@ -11,20 +11,55 @@ import {
   Modal,
   PageHeader,
   PageLoading,
+  Select,
+  Textarea,
 } from '../../components/ui';
+import { ImportExcelModal } from '../../components/ImportExcelModal';
 import { errorMessage } from '../../lib/format';
 import type { ClassMember, ClassRoom, User } from '../../types';
+
+/** Urutkan jenjang secara alami: angka dulu (1-6), lalu romawi (VII-VIII-IX), lalu alfabet */
+function sortGrades(grades: string[]): string[] {
+  const romanOrder = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+  return [...grades].sort((a, b) => {
+    const ia = parseInt(a, 10);
+    const ib = parseInt(b, 10);
+    if (!Number.isNaN(ia) && !Number.isNaN(ib)) return ia - ib;
+    if (!Number.isNaN(ia)) return -1;
+    if (!Number.isNaN(ib)) return 1;
+    const ra = romanOrder.indexOf(a.toUpperCase());
+    const rb = romanOrder.indexOf(b.toUpperCase());
+    if (ra !== -1 && rb !== -1) return ra - rb;
+    return a.localeCompare(b, 'id');
+  });
+}
+
+interface ClassFormState {
+  id?: number;
+  name: string;
+  grade: string;
+  jurusan: string;
+  description: string;
+}
+
+const emptyForm = (): ClassFormState => ({ name: '', grade: 'VII', jurusan: 'Umum', description: '' });
 
 export function ClassesPage() {
   const [classes, setClasses] = useState<ClassRoom[] | null>(null);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
 
-  // form buat kelas
-  const [showCreate, setShowCreate] = useState(false);
-  const [name, setName] = useState('');
+  // filter jenjang
+  const [gradeFilter, setGradeFilter] = useState('all');
+
+  // form buat/ubah kelas
+  const [form, setForm] = useState<ClassFormState | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+
+  // import excel
+  const [showImport, setShowImport] = useState(false);
+  const [importMembersFor, setImportMembersFor] = useState<ClassRoom | null>(null);
 
   // kelola anggota
   const [membersOf, setMembersOf] = useState<ClassRoom | null>(null);
@@ -49,13 +84,40 @@ export function ClassesPage() {
 
   const refresh = () => setReload((k) => k + 1);
 
+  const allGrades = useMemo(
+    () => sortGrades([...new Set((classes ?? []).map((c) => c.grade))]),
+    [classes],
+  );
+
+  const grouped = useMemo(() => {
+    const filtered =
+      gradeFilter === 'all' ? (classes ?? []) : (classes ?? []).filter((c) => c.grade === gradeFilter);
+    const map = new Map<string, ClassRoom[]>();
+    for (const kelas of filtered) {
+      const list = map.get(kelas.grade) ?? [];
+      list.push(kelas);
+      map.set(kelas.grade, list);
+    }
+    return sortGrades([...map.keys()]).map((grade) => ({
+      grade,
+      items: map.get(grade)!,
+    }));
+  }, [classes, gradeFilter]);
+
   const handleCreate = async () => {
+    if (!form) return;
     setSaving(true);
     setFormError('');
     try {
-      await api.createClass({ name: name.trim() });
-      setName('');
-      setShowCreate(false);
+      const body = {
+        name: form.name.trim(),
+        grade: form.grade.trim() || 'Umum',
+        jurusan: form.jurusan.trim() || 'Umum',
+        description: form.description.trim() || undefined,
+      };
+      if (form.id) await api.updateClass(form.id, body);
+      else await api.createClass(body);
+      setForm(null);
       refresh();
     } catch (err) {
       setFormError(errorMessage(err));
@@ -120,63 +182,155 @@ export function ClassesPage() {
     <>
       <PageHeader
         title="Kelas"
-        subtitle="Kelola kelas dan daftar siswa"
+        subtitle="Dikelompokkan per jenjang — VII, VIII, IX, atau jenjang lain sesuai sekolah"
         actions={
-          <Button onClick={() => { setFormError(''); setShowCreate(true); }}>
-            <Plus className="h-4 w-4" /> Buat Kelas
-          </Button>
+          <>
+            <Button variant="secondary" onClick={() => setShowImport(true)}>
+              <Upload className="h-4 w-4" /> Import Excel
+            </Button>
+            <Button onClick={() => { setFormError(''); setForm(emptyForm()); }}>
+              <Plus className="h-4 w-4" /> Buat Kelas
+            </Button>
+          </>
         }
       />
 
       <ErrorNote>{error}</ErrorNote>
 
-      {classes.length === 0 ? (
-        <EmptyState
-          icon={<School className="h-10 w-10" />}
-          title="Belum ada kelas"
-          subtitle="Buat kelas untuk mengelompokkan siswa dan menugaskan ujian."
-        />
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {classes.map((kelas) => (
-            <Card key={kelas.id} className="flex flex-col">
-              <div className="mb-3 flex items-start justify-between">
-                <div>
-                  <p className="font-semibold text-slate-800">{kelas.name}</p>
-                  <p className="mt-0.5 line-clamp-2 text-sm text-slate-500">
-                    {kelas.description ?? 'Tanpa deskripsi'}
-                  </p>
-                </div>
-                <button
-                  onClick={() => handleDelete(kelas)}
-                  className="cursor-pointer rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                  aria-label="Hapus kelas"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-              <Button variant="secondary" onClick={() => openMembers(kelas)} className="mt-auto w-full">
-                <UserPlus className="h-4 w-4" /> Kelola Siswa
-              </Button>
-            </Card>
+      {/* Filter jenjang */}
+      {allGrades.length > 0 && (
+        <div className="mb-5 flex flex-wrap gap-1.5">
+          <button
+            onClick={() => setGradeFilter('all')}
+            className={`cursor-pointer rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+              gradeFilter === 'all' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            Semua ({classes.length})
+          </button>
+          {allGrades.map((grade) => (
+            <button
+              key={grade}
+              onClick={() => setGradeFilter(grade)}
+              className={`cursor-pointer rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                gradeFilter === grade ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              Kelas {grade} ({classes.filter((c) => c.grade === grade).length})
+            </button>
           ))}
         </div>
       )}
 
-      {/* Modal buat kelas */}
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Buat Kelas">
-        <div className="space-y-4">
-          <ErrorNote>{formError}</ErrorNote>
-          <Field label="Nama kelas">
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="cth: XI IPA 1" />
-          </Field>
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setShowCreate(false)}>Batal</Button>
-            <Button onClick={handleCreate} loading={saving} disabled={name.trim().length < 2}>
-              Simpan
-            </Button>
+      {classes.length === 0 ? (
+        <EmptyState
+          icon={<School className="h-10 w-10" />}
+          title="Belum ada kelas"
+          subtitle="Buat kelas manual atau import banyak kelas sekaligus dari file Excel."
+        />
+      ) : (
+        grouped.map(({ grade, items }) => (
+          <section key={grade} className="mb-7">
+            <div className="mb-3 flex items-center gap-3">
+              <h2 className="font-bold text-slate-700">Kelas {grade}</h2>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+                {items.length} kelas · {items.reduce((s, c) => s + (c.studentCount ?? 0), 0)} siswa
+              </span>
+              <div className="h-px flex-1 bg-slate-200" />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {items.map((kelas) => (
+                <Card key={kelas.id} className="flex flex-col">
+                  <div className="mb-3 flex items-start justify-between">
+                    <div>
+                      <p className="font-semibold text-slate-800">{kelas.name}</p>
+                      <p className="mt-0.5 text-xs text-slate-400">
+                        {kelas.jurusan !== 'Umum' ? `Jurusan ${kelas.jurusan}` : 'Umum'}
+                        {kelas.description ? ` · ${kelas.description}` : ''}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleDelete(kelas)}
+                      className="cursor-pointer rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                      aria-label="Hapus kelas"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <Button variant="secondary" onClick={() => openMembers(kelas)} className="mt-auto w-full">
+                    <UserPlus className="h-4 w-4" /> Kelola Siswa
+                  </Button>
+                </Card>
+              ))}
+            </div>
+          </section>
+        ))
+      )}
+
+      {/* Modal buat/ubah kelas */}
+      <Modal
+        open={form !== null}
+        onClose={() => setForm(null)}
+        title={form?.id ? 'Ubah Kelas' : 'Buat Kelas'}
+      >
+        {form && (
+          <div className="space-y-4">
+            <ErrorNote>{formError}</ErrorNote>
+            <Field label="Nama kelas">
+              <Input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="cth: VII A"
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Jenjang" hint="Sesuaikan dengan jenjang sekolah">
+                <Select
+                  value={form.grade}
+                  onChange={(e) => setForm({ ...form, grade: e.target.value })}
+                >
+                  <optgroup label="Umum">
+                    <option value="Umum">Umum / Tanpa jenjang</option>
+                  </optgroup>
+                  <optgroup label="SD (Kelas 1-6)">
+                    {['1', '2', '3', '4', '5', '6'].map((g) => (
+                      <option key={g} value={g}>{`Kelas ${g}`}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="SMP (Kelas VII-IX)">
+                    {['VII', 'VIII', 'IX'].map((g) => (
+                      <option key={g} value={g}>{`Kelas ${g}`}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="SMA/SMK (Kelas X-XII)">
+                    {['X', 'XI', 'XII'].map((g) => (
+                      <option key={g} value={g}>{`Kelas ${g}`}</option>
+                    ))}
+                  </optgroup>
+                </Select>
+              </Field>
+              <Field label="Jurusan" hint="Isikan Umum bila tidak ada jurusan">
+                <Input
+                  value={form.jurusan}
+                  onChange={(e) => setForm({ ...form, jurusan: e.target.value })}
+                  placeholder="cth: Umum / IPA / IPS"
+                />
+              </Field>
+            </div>
+            <Field label="Deskripsi (opsional)">
+              <Textarea
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+              />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setForm(null)}>Batal</Button>
+              <Button onClick={handleCreate} loading={saving} disabled={form.name.trim().length < 2}>
+                Simpan
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
       </Modal>
 
       {/* Modal kelola anggota */}
@@ -198,14 +352,22 @@ export function ClassesPage() {
                   <li key={m.id} className="flex items-center justify-between px-3 py-2">
                     <div>
                       <p className="text-sm font-medium text-slate-700">{m.name}</p>
-                      <p className="text-xs text-slate-400">{m.email}</p>
+                      <p className="text-xs text-slate-400">
+                        {m.nisn || m.nis ? (
+                          <span className="font-mono">
+                            {m.nisn ? `NISN ${m.nisn}` : ''}{m.nisn && m.nis ? ' · ' : ''}{m.nis ? `NIS ${m.nis}` : ''}
+                          </span>
+                        ) : (
+                          m.email
+                        )}
+                      </p>
                     </div>
                     <button
                       onClick={() => handleRemoveMember(m.id)}
                       className="cursor-pointer rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
                       aria-label="Keluarkan dari kelas"
                     >
-                      <X className="h-4 w-4" />
+                      ✕
                     </button>
                   </li>
                 ))}
@@ -213,7 +375,12 @@ export function ClassesPage() {
             )}
 
             <div>
-              <p className="mb-2 text-sm font-medium text-slate-700">Tambah siswa</p>
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-sm font-medium text-slate-700">Tambah siswa</p>
+                <Button variant="secondary" onClick={() => setImportMembersFor(membersOf)} className="px-3 py-1.5 text-xs">
+                  <Upload className="h-3.5 w-3.5" /> Import Excel
+                </Button>
+              </div>
               {addable.length === 0 ? (
                 <p className="text-sm text-slate-400">Semua siswa sudah tergabung.</p>
               ) : (
@@ -250,6 +417,39 @@ export function ClassesPage() {
           </div>
         )}
       </Modal>
+
+      {/* Modal import Excel: daftar kelas */}
+      <ImportExcelModal
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        onSuccess={refresh}
+        title="Import Kelas dari Excel"
+        columnsHint={[
+          'nama (wajib)',
+          'jenjang (cth: VII)',
+          'jurusan (default Umum)',
+          'deskripsi (opsional)',
+        ]}
+        onDownloadTemplate={api.downloadClassesTemplate}
+        onUpload={api.importClasses}
+      />
+
+      {/* Modal import Excel: siswa ke kelas tertentu */}
+      <ImportExcelModal
+        open={importMembersFor !== null}
+        onClose={() => setImportMembersFor(null)}
+        onSuccess={() => importMembersFor && openMembers(importMembersFor)}
+        title={`Import Siswa ke ${importMembersFor?.name ?? 'Kelas'}`}
+        columnsHint={[
+          'nama (wajib)',
+          'nis (opsional)',
+          'nisn (isi NISN atau NIS)',
+          'password (opsional, default password123)',
+          'Siswa sudah terdaftar otomatis digabungkan; belum terdaftar akan dibuatkan akunnya.',
+        ]}
+        onDownloadTemplate={api.downloadClassStudentsTemplate}
+        onUpload={(file) => api.importClassStudents(importMembersFor!.id, file)}
+      />
     </>
   );
 }

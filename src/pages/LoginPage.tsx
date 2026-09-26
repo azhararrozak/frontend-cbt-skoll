@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router';
-import { GraduationCap, LockKeyhole, Mail } from 'lucide-react';
+import { useNavigate } from 'react-router';
+import { GraduationCap, LockKeyhole, LogIn } from 'lucide-react';
 import { useAuth } from '../auth/useAuth';
 import { Button, ErrorNote, Field, Input } from '../components/ui';
 import { errorMessage } from '../lib/format';
@@ -9,7 +9,7 @@ import { errorMessage } from '../lib/format';
 export function LoginPage() {
   const { signIn } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -19,7 +19,7 @@ export function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const user = await signIn(email.trim(), password);
+      const user = await signIn(identifier.trim(), password);
       navigate(user.role === 'siswa' ? '/siswa' : '/app', { replace: true });
     } catch (err) {
       setError(errorMessage(err));
@@ -28,8 +28,8 @@ export function LoginPage() {
     }
   };
 
-  const fillDemo = (demoEmail: string) => {
-    setEmail(demoEmail);
+  const fillDemo = (value: string) => {
+    setIdentifier(value);
     setPassword('password123');
   };
 
@@ -51,7 +51,7 @@ export function LoginPage() {
           </h1>
           <p className="mt-3 max-w-md text-indigo-200">
             Kelola bank soal, buat ujian dengan token, dan pantau hasil siswa — semuanya dalam satu
-            aplikasi ringan.
+            aplikasi ringan. Siswa masuk cukup dengan NISN.
           </p>
         </div>
         <p className="text-sm text-indigo-300">© {new Date().getFullYear()} CBT Skoll</p>
@@ -66,26 +66,23 @@ export function LoginPage() {
             </div>
             <h2 className="text-2xl font-bold text-slate-800">Masuk ke akun Anda</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Belum punya akun?{' '}
-              <Link to="/daftar" className="font-medium text-indigo-600 hover:underline">
-                Daftar siswa
-              </Link>
+              Siswa masuk dengan <strong>NISN</strong> (atau NIS), guru/admin dengan email. Akun
+              dibuatkan oleh admin sekolah.
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <ErrorNote>{error}</ErrorNote>
-            <Field label="Email">
+            <Field label="NISN atau Email">
               <div className="relative">
-                <Mail className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <LogIn className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
-                  type="email"
                   required
-                  autoComplete="email"
-                  placeholder="nama@sekolah.sch.id"
+                  autoComplete="username"
+                  placeholder="cth: 0012345678 atau nama@sekolah.sch.id"
                   className="pl-9"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                 />
               </div>
             </Field>
@@ -112,14 +109,14 @@ export function LoginPage() {
             <p className="mb-2 text-xs font-medium text-slate-500">Akun demo (klik untuk isi otomatis):</p>
             <div className="flex flex-wrap gap-2">
               {[
-                { label: 'Admin', email: 'admin@cbt.test' },
-                { label: 'Guru', email: 'guru@cbt.test' },
-                { label: 'Siswa', email: 'siswa1@cbt.test' },
+                { label: 'Admin', value: 'admin@cbt.test' },
+                { label: 'Guru', value: 'guru@cbt.test' },
+                { label: 'Siswa (NISN)', value: '0012345678' },
               ].map((acc) => (
                 <button
-                  key={acc.email}
+                  key={acc.value}
                   type="button"
-                  onClick={() => fillDemo(acc.email)}
+                  onClick={() => fillDemo(acc.value)}
                   className="cursor-pointer rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-600 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
                 >
                   {acc.label}

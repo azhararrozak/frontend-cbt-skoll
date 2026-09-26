@@ -30,8 +30,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const res = await api.signIn({ email, password });
+  const signIn = useCallback(async (identifier: string, password: string) => {
+    const res = await api.signIn({ identifier, password });
     const { user: u, accessToken, refreshToken } = res.data!;
     tokenStore.set({ accessToken, refreshToken, user: u });
     setUser(u);

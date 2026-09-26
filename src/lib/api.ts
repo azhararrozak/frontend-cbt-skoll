@@ -6,8 +6,11 @@ import type {
   ClassRoom,
   Exam,
   ExamDetail,
+  ActiveExamSummary,
   ExamListItem,
+  ExamMonitoring,
   ExamResults,
+  ImportSummary,
   MySession,
   Question,
   QuestionBank,
@@ -77,12 +80,44 @@ async function doRefresh(): Promise<string | null> {
   }
 }
 
+/**
+ * Fetch dengan header auth; bila access token kedaluwarsa (401),
+ * refresh token diperbarui sekali lalu request diulang.
+ * Dipakai bersama oleh request JSON dan download file.
+ */
+async function fetchWithRefresh(url: string, init: RequestInit, skipAuth = false): Promise<Response> {
+  const headers = new Headers(init.headers);
+  const token = tokenStore.getAccess();
+  if (!skipAuth && token) headers.set('Authorization', `Bearer ${token}`);
+
+  let res = await fetch(url, { ...init, headers });
+
+  if (res.status === 401 && !skipAuth) {
+    if (!refreshing) {
+      refreshing = doRefresh().finally(() => {
+        refreshing = null;
+      });
+    }
+    const newToken = await refreshing;
+    if (newToken) {
+      headers.set('Authorization', `Bearer ${newToken}`);
+      res = await fetch(url, { ...init, headers });
+    } else {
+      tokenStore.clear();
+      if (!location.pathname.startsWith('/login')) {
+        location.assign('/login');
+      }
+      throw new ApiRequestError(401, 'Sesi berakhir, silakan masuk kembali');
+    }
+  }
+  return res;
+}
+
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
   query?: Record<string, string | number | undefined>;
   skipAuth?: boolean;
-  raw?: boolean;
 }
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<ApiSuccess<T>> {
@@ -95,40 +130,19 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<ApiS
     }
   }
 
+  const isFormData = body instanceof FormData;
   const headers: Record<string, string> = {};
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const token = tokenStore.getAccess();
-  if (!skipAuth && token) headers.Authorization = `Bearer ${token}`;
+  if (body !== undefined && !isFormData) headers['Content-Type'] = 'application/json';
 
-  let res = await fetch(url, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-
-  // Access token kadaluarsa -> refresh sekali lalu ulangi request
-  if (res.status === 401 && !skipAuth) {
-    if (!refreshing) {
-      refreshing = doRefresh().finally(() => {
-        refreshing = null;
-      });
-    }
-    const newToken = await refreshing;
-    if (newToken) {
-      headers.Authorization = `Bearer ${newToken}`;
-      res = await fetch(url, {
-        method,
-        headers,
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      });
-    } else {
-      tokenStore.clear();
-      if (!location.pathname.startsWith('/login')) {
-        location.assign('/login');
-      }
-      throw new ApiRequestError(401, 'Sesi berakhir, silakan masuk kembali');
-    }
-  }
+  const res = await fetchWithRefresh(
+    url.toString(),
+    {
+      method,
+      headers,
+      body: body !== undefined ? (isFormData ? (body as FormData) : JSON.stringify(body)) : undefined,
+    },
+    skipAuth,
+  );
 
   let json: ApiSuccess<T> | ApiErrorBody;
   try {
@@ -144,15 +158,43 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<ApiS
   return json as ApiSuccess<T>;
 }
 
+/** Unduh file dari endpoint terproteksi (dengan auth + auto refresh token) sebagai blob */
+export async function downloadFile(path: string): Promise<{ blob: Blob; filename: string }> {
+  const res = await fetchWithRefresh(`${API_BASE}${path}`, { method: 'GET' });
+
+  if (!res.ok) {
+    let message = `Gagal mengunduh file (${res.status})`;
+    try {
+      const err = (await res.json()) as ApiErrorBody;
+      if (err.message) message = err.message;
+    } catch {
+      /* respons bukan JSON */
+    }
+    throw new ApiRequestError(res.status, message);
+  }
+
+  const disposition = res.headers.get('Content-Disposition') ?? '';
+  const match = disposition.match(/filename="?([^";]+)"?/);
+  return {
+    blob: await res.blob(),
+    filename: match?.[1] ?? 'download',
+  };
+}
+
+/** Picu unduhan blob ke perangkat pengguna */
+export function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export const api = {
   // Auth
-  signUp: (body: { name: string; email: string; password: string }) =>
-    request<{ user: User; accessToken: string; refreshToken: string }>('/auth/signup', {
-      method: 'POST',
-      body,
-      skipAuth: true,
-    }),
-  signIn: (body: { email: string; password: string }) =>
+  // identifier: email (admin/guru) atau NISN/NIS (siswa)
+  signIn: (body: { identifier: string; password: string }) =>
     request<{ user: User; accessToken: string; refreshToken: string }>('/auth/signin', {
       method: 'POST',
       body,
@@ -165,21 +207,71 @@ export const api = {
   // Users
   listUsers: (query?: { page?: number; limit?: number; search?: string; role?: string }) =>
     request<User[]>('/users', { query }),
-  createUser: (body: { name: string; email: string; password: string; role: string }) =>
-    request<User>('/users', { method: 'POST', body }),
+  createUser: (body: {
+    name: string;
+    email?: string;
+    nis?: string;
+    nisn?: string;
+    password: string;
+    role: string;
+  }) => request<User>('/users', { method: 'POST', body }),
   deleteUser: (id: number) => request(`/users/${id}`, { method: 'DELETE' }),
 
   // Kelas
-  listClasses: (query?: { page?: number; limit?: number; search?: string }) =>
+  listClasses: (query?: { page?: number; limit?: number; search?: string; grade?: string }) =>
     request<ClassRoom[]>('/classes', { query }),
-  createClass: (body: { name: string; description?: string }) =>
+  createClass: (body: { name: string; grade?: string; jurusan?: string; description?: string }) =>
     request<ClassRoom>('/classes', { method: 'POST', body }),
+  updateClass: (
+    id: number,
+    body: { name?: string; grade?: string; jurusan?: string; description?: string },
+  ) => request<ClassRoom>(`/classes/${id}`, { method: 'PATCH', body }),
   deleteClass: (id: number) => request(`/classes/${id}`, { method: 'DELETE' }),
   listClassMembers: (id: number) => request<ClassMember[]>(`/classes/${id}/students`),
   addClassMembers: (id: number, studentIds: number[]) =>
     request<{ added: number }>(`/classes/${id}/students`, { method: 'POST', body: { studentIds } }),
   removeClassMember: (id: number, studentId: number) =>
     request(`/classes/${id}/students/${studentId}`, { method: 'DELETE' }),
+
+  // Import Excel
+  importUsers: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<ImportSummary>('/imports/users', { method: 'POST', body: form });
+  },
+  importClasses: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<ImportSummary>('/imports/classes', { method: 'POST', body: form });
+  },
+  importClassStudents: (classId: number, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<ImportSummary>(`/imports/class-students/${classId}`, {
+      method: 'POST',
+      body: form,
+    });
+  },
+  downloadUsersTemplate: () => downloadFile('/imports/users/template'),
+  downloadClassesTemplate: () => downloadFile('/imports/classes/template'),
+  downloadClassStudentsTemplate: () => downloadFile('/imports/class-students/template'),
+  downloadQuestionsTemplate: () => downloadFile('/imports/bank-questions/template'),
+  importQuestionsDocx: (bankId: number, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<ImportSummary>(`/imports/bank-questions/${bankId}`, {
+      method: 'POST',
+      body: form,
+    });
+  },
+
+  // Backup (admin)
+  downloadBackup: () => downloadFile('/backup'),
+  restoreBackup: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<Record<string, number>>('/backup/restore', { method: 'POST', body: form });
+  },
 
   // Bank soal
   listBanks: (query?: { page?: number; limit?: number; search?: string }) =>
@@ -221,10 +313,13 @@ export const api = {
   createExam: (body: Record<string, unknown>) => request<Exam>('/exams', { method: 'POST', body }),
   updateExam: (id: number, body: Record<string, unknown>) =>
     request<Exam>(`/exams/${id}`, { method: 'PATCH', body }),
-  deleteExam: (id: number) => request(`/exams/${id}`, { method: 'DELETE' }),
+  deleteExam: (id: number, force = false) =>
+    request(`/exams/${id}${force ? '?force=true' : ''}`, { method: 'DELETE' }),
   regenerateToken: (id: number) =>
     request<{ token: string }>(`/exams/${id}/regenerate-token`, { method: 'POST' }),
   examResults: (id: number) => request<ExamResults>(`/exams/${id}/results`),
+  examMonitoring: (id: number) => request<ExamMonitoring>(`/exams/${id}/monitoring`),
+  activeExamSummary: () => request<ActiveExamSummary[]>('/exams/active-summary'),
 
   // Siswa
   availableExams: () => request<AvailableExam[]>('/exams/available'),
@@ -238,6 +333,20 @@ export const api = {
       `/sessions/${sessionId}/answers`,
       { method: 'POST', body: { questionId, answer } },
     ),
+  resetSession: (sessionId: number) =>
+    request<{ examId: number; studentId: number }>(`/sessions/${sessionId}/reset`, {
+      method: 'POST',
+    }),
+  forceFinishSession: (sessionId: number) =>
+    request<{ sessionId: number; status: string; score: number }>(
+      `/sessions/${sessionId}/force-finish`,
+      { method: 'POST' },
+    ),
+  setFlag: (sessionId: number, questionId: number, flagged: boolean) =>
+    request<{ flags: number[] }>(`/sessions/${sessionId}/flags`, {
+      method: 'POST',
+      body: { questionId, flagged },
+    }),
   finishSession: (sessionId: number) =>
     request<{
       sessionId: number;
